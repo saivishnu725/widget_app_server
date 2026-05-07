@@ -1,0 +1,42 @@
+services:
+  app:
+    build: .
+    container_name: widget_app_node
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-widget_user}:${POSTGRES_PASSWORD:-widget_password}@postgres:5432/${POSTGRES_DB:-widget_app_db}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:14-alpine
+    container_name: widget_app_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-widget_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-widget_password}
+      POSTGRES_DB: ${POSTGRES_DB:-widget_app_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: widget_app_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
