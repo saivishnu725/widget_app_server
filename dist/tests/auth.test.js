@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const supertest_1 = __importDefault(require("supertest"));
 const app_1 = __importDefault(require("../app"));
 const db_1 = __importDefault(require("../config/db"));
+const redis_1 = __importDefault(require("../config/redis"));
 describe('Auth Routes', () => {
     const testUser = {
         email: `test_${Date.now()}@example.com`,
@@ -19,6 +20,7 @@ describe('Auth Routes', () => {
         });
         // Disconnect prisma
         await db_1.default.$disconnect();
+        await redis_1.default.quit();
     });
     describe('POST /auth/register', () => {
         it('should register a new user successfully', async () => {
