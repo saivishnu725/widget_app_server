@@ -135,6 +135,7 @@ export const deleteWidget = async (req: AuthRequest, res: Response): Promise<voi
 
     // Clean up Redis keys
     await redisClient.del(`widget:${id}:state`);
+    await redisClient.del(`widget:${id}:activeUsers`);
     await redisClient.del(`widget:${id}:lastModifiedBy`);
     await redisClient.del(`widget:${id}:lastModifiedAt`);
 
@@ -221,12 +222,14 @@ export const getWidgetState = async (req: AuthRequest, res: Response): Promise<v
     const state = await redisClient.get(`widget:${id}:state`);
     const lastModifiedBy = await redisClient.get(`widget:${id}:lastModifiedBy`);
     const lastModifiedAt = await redisClient.get(`widget:${id}:lastModifiedAt`);
+    const activeUsers = await redisClient.smembers(`widget:${id}:activeUsers`);
 
     res.json({
       widgetId: id,
       state: state || 'OFF', // Default to OFF if not set
       lastModifiedBy: lastModifiedBy || null,
-      lastModifiedAt: lastModifiedAt || null
+      lastModifiedAt: lastModifiedAt || null,
+      activeUsers
     });
   } catch (error) {
     console.error('Error fetching widget state:', error);

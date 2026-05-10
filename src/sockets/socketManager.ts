@@ -108,7 +108,7 @@ export const setupSockets = (server: http.Server) => {
         // 2. State check (Atomic via Redis Lua Script)
         const result = await toggleWidgetState(widgetId, targetState, socket.userId);
 
-        if (result === 'SUCCESS') {
+        if (result === 'SUCCESS' || result === 'STILL_ON') {
           // 3. Broadcasting
           const stateCache = await getWidgetStateCache(widgetId);
           io.to(`widget_room:${widgetId}`).emit('state_changed', {
@@ -120,13 +120,13 @@ export const setupSockets = (server: http.Server) => {
           prisma.widgetStateLog.create({
             data: {
               widget_id: widgetId,
-              new_state: targetState,
+              new_state: stateCache.state,
               changed_by: socket.userId
             }
           }).catch(err => console.error('Error logging state to DB:', err));
 
         } else {
-          // Failed to toggle based on logic (ALREADY_ON, ALREADY_OFF, FORBIDDEN)
+          // Failed: ALREADY_ACTIVE, NOT_ACTIVE, INVALID_STATE
           socket.emit('toggle_error', { widgetId, message: result });
         }
       } catch (error) {

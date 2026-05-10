@@ -1,14 +1,14 @@
 import { toggleWidgetState, getWidgetStateCache } from '../services/redisService';
 import redisClient from '../config/redis';
 
-describe('Redis Service - Lua Script Atomic Toggle', () => {
+describe('Redis Service - Multi-User Active Set Toggle', () => {
   const testWidgetId = `test_widget_${Date.now()}`;
   const userA = `user_a_${Date.now()}`;
   const userB = `user_b_${Date.now()}`;
 
   beforeEach(async () => {
-    // Reset state before each test
     await redisClient.del(`widget:${testWidgetId}:state`);
+    await redisClient.del(`widget:${testWidgetId}:activeUsers`);
     await redisClient.del(`widget:${testWidgetId}:lastModifiedBy`);
     await redisClient.del(`widget:${testWidgetId}:lastModifiedAt`);
     await redisClient.set(`widget:${testWidgetId}:state`, 'OFF');
@@ -18,52 +18,83 @@ describe('Redis Service - Lua Script Atomic Toggle', () => {
     await redisClient.quit();
   });
 
-  it('should successfully turn ON and set user A as initiator', async () => {
+  it('should turn ON and add user A to the active set', async () => {
     const result = await toggleWidgetState(testWidgetId, 'ON', userA);
     expect(result).toBe('SUCCESS');
 
     const cache = await getWidgetStateCache(testWidgetId);
     expect(cache.state).toBe('ON');
-    expect(cache.lastModifiedBy).toBe(userA);
+    expect(cache.activeUsers).toContain(userA);
+    expect(cache.activeUsers.length).toBe(1);
   });
 
-  it('should return ALREADY_ON if user tries to turn ON an already ON widget', async () => {
+  it('should return ALREADY_ACTIVE if the same user tries to turn ON twice', async () => {
+    await toggleWidgetState(testWidgetId, 'ON', userA);
+    const result = await toggleWidgetState(testWidgetId, 'ON', userA);
+    expect(result).toBe('ALREADY_ACTIVE');
+  });
+
+  it('should allow user B to also turn ON (multi-user active)', async () => {
     await toggleWidgetState(testWidgetId, 'ON', userA);
     const result = await toggleWidgetState(testWidgetId, 'ON', userB);
-    
-    expect(result).toBe('ALREADY_ON');
+    expect(result).toBe('SUCCESS');
 
-    // State should still point to userA as initiator
     const cache = await getWidgetStateCache(testWidgetId);
-    expect(cache.lastModifiedBy).toBe(userA);
+    expect(cache.state).toBe('ON');
+    expect(cache.activeUsers).toContain(userA);
+    expect(cache.activeUsers).toContain(userB);
+    expect(cache.activeUsers.length).toBe(2);
   });
 
-  it('should allow initiator (user A) to turn OFF the widget', async () => {
+  it('should keep widget ON when user A turns OFF but user B is still active (STILL_ON)', async () => {
     await toggleWidgetState(testWidgetId, 'ON', userA);
-    
+    await toggleWidgetState(testWidgetId, 'ON', userB);
+
+    const result = await toggleWidgetState(testWidgetId, 'OFF', userA);
+    expect(result).toBe('STILL_ON');
+
+    const cache = await getWidgetStateCache(testWidgetId);
+    expect(cache.state).toBe('ON');
+    expect(cache.activeUsers).not.toContain(userA);
+    expect(cache.activeUsers).toContain(userB);
+    expect(cache.activeUsers.length).toBe(1);
+  });
+
+  it('should turn OFF when the last active user leaves', async () => {
+    await toggleWidgetState(testWidgetId, 'ON', userA);
+    await toggleWidgetState(testWidgetId, 'ON', userB);
+    await toggleWidgetState(testWidgetId, 'OFF', userA); // STILL_ON
+
+    const result = await toggleWidgetState(testWidgetId, 'OFF', userB);
+    expect(result).toBe('SUCCESS');
+
+    const cache = await getWidgetStateCache(testWidgetId);
+    expect(cache.state).toBe('OFF');
+    expect(cache.activeUsers.length).toBe(0);
+  });
+
+  it('should allow single user to turn ON and OFF', async () => {
+    await toggleWidgetState(testWidgetId, 'ON', userA);
     const result = await toggleWidgetState(testWidgetId, 'OFF', userA);
     expect(result).toBe('SUCCESS');
 
     const cache = await getWidgetStateCache(testWidgetId);
     expect(cache.state).toBe('OFF');
-    // It's acceptable for lastModifiedBy to stay as userA, tracking who turned it OFF
-    expect(cache.lastModifiedBy).toBe(userA); 
+    expect(cache.activeUsers.length).toBe(0);
   });
 
-  it('should FORBID user B from turning OFF a widget initiated by user A', async () => {
+  it('should return NOT_ACTIVE if user tries to turn OFF without being active', async () => {
+    const result = await toggleWidgetState(testWidgetId, 'OFF', userA);
+    expect(result).toBe('NOT_ACTIVE');
+  });
+
+  it('should return NOT_ACTIVE if non-active user tries to turn OFF an ON widget', async () => {
     await toggleWidgetState(testWidgetId, 'ON', userA);
-
     const result = await toggleWidgetState(testWidgetId, 'OFF', userB);
-    expect(result).toBe('FORBIDDEN');
+    expect(result).toBe('NOT_ACTIVE');
 
-    // State should still be ON, with userA as initiator
     const cache = await getWidgetStateCache(testWidgetId);
     expect(cache.state).toBe('ON');
-    expect(cache.lastModifiedBy).toBe(userA);
-  });
-
-  it('should return ALREADY_OFF if widget is already OFF', async () => {
-    const result = await toggleWidgetState(testWidgetId, 'OFF', userA);
-    expect(result).toBe('ALREADY_OFF');
+    expect(cache.activeUsers).toContain(userA);
   });
 });
