@@ -2,6 +2,7 @@ import { Server, Socket } from 'socket.io';
 import http from 'http';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/db';
+import redisClient from '../config/redis';
 import { toggleWidgetState, getWidgetStateCache } from '../services/redisService';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret';
@@ -79,6 +80,17 @@ export const setupSockets = (server: http.Server) => {
 
       if (!widgetId || !['ON', 'OFF'].includes(targetState)) {
         socket.emit('toggle_error', { widgetId, message: 'Invalid payload' });
+        return;
+      }
+
+      // WebSocket Rate Limiting: max 10 toggles/sec per user
+      const rateLimitKey = `ws_rate_limit:${socket.userId}`;
+      const current = await redisClient.incr(rateLimitKey);
+      if (current === 1) {
+        await redisClient.expire(rateLimitKey, 1);
+      }
+      if (current > 10) {
+        // Ignore spamming clients
         return;
       }
 
