@@ -1,6 +1,7 @@
 import request from 'supertest';
 import app from '../app';
 import prisma from '../config/db';
+import redisClient from '../config/redis';
 
 describe('Auth Routes', () => {
   const testUser = {
@@ -16,6 +17,7 @@ describe('Auth Routes', () => {
     });
     // Disconnect prisma
     await prisma.$disconnect();
+    await redisClient.quit();
   });
 
   describe('POST /auth/register', () => {
