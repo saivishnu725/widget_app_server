@@ -1,0 +1,41 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: widget_app_prod
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.production
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-widget_user}:${POSTGRES_PASSWORD:-widget_password}@postgres:5432/${POSTGRES_DB:-widget_app_db}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    restart: always
+
+  postgres:
+    image: postgres:14-alpine
+    container_name: widget_app_postgres_prod
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-widget_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-widget_password}
+      POSTGRES_DB: ${POSTGRES_DB:-widget_app_db}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: widget_app_redis_prod
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data_prod:/data
+    restart: always
+
+volumes:
+  postgres_data_prod:
+  redis_data_prod:
